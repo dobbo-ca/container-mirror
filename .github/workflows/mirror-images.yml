@@ -87,25 +87,29 @@ jobs:
       - name: Log in to GHCR
         run: echo "${{ secrets.GITHUB_TOKEN }}" | crane auth login ghcr.io -u ${{ github.actor }} --password-stdin
 
-      - name: Copy image (skip if digest matches)
+      - name: Check digests
+        id: check
         run: |
           SOURCE="${{ matrix.source }}"
           TARGET="${{ env.REGISTRY }}/${{ matrix.name }}:${{ matrix.tag }}"
 
-          echo "Source: $SOURCE"
-          echo "Target: $TARGET"
-
           SOURCE_DIGEST=$(crane digest "$SOURCE" 2>&1) && true
           SOURCE_EXIT=$?
-          echo "Source digest (exit $SOURCE_EXIT): $SOURCE_DIGEST"
-
           TARGET_DIGEST=$(crane digest "$TARGET" 2>&1) && true
           TARGET_EXIT=$?
-          echo "Target digest (exit $TARGET_EXIT): $TARGET_DIGEST"
+
+          echo "source=$SOURCE_DIGEST" >> "$GITHUB_OUTPUT"
+          echo "target=$TARGET_DIGEST" >> "$GITHUB_OUTPUT"
 
           if [ "$SOURCE_EXIT" -eq 0 ] && [ "$TARGET_EXIT" -eq 0 ] && [ "$SOURCE_DIGEST" = "$TARGET_DIGEST" ]; then
-            echo "::notice::Skipping — digests match ($SOURCE_DIGEST)"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Up to date ($SOURCE_DIGEST)"
           else
-            echo "Copying $SOURCE → $TARGET"
-            crane copy "$SOURCE" "$TARGET"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::Needs copy — source=$SOURCE_DIGEST target=$TARGET_DIGEST"
           fi
+
+      - name: Copy ${{ matrix.source }}
+        if: steps.check.outputs.changed == 'true'
+        run: |
+          crane copy "${{ matrix.source }}" "${{ env.REGISTRY }}/${{ matrix.name }}:${{ matrix.tag }}"
