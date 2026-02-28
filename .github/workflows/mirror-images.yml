@@ -23,7 +23,6 @@ jobs:
       group: dobbolab
     outputs:
       matrix: ${{ steps.diff.outputs.matrix }}
-      has_changes: ${{ steps.diff.outputs.has_changes }}
     steps:
       - uses: actions/checkout@v4
 
@@ -103,18 +102,12 @@ jobs:
           count=$(echo "$changed" | jq 'length')
           echo "Summary: ${count} to copy, ${skipped} up to date, ${total} total"
 
-          if [ "$count" -gt 0 ]; then
-            matrix=$(echo "$changed" | jq -c '{include: .}')
-            echo "matrix=${matrix}" >> "$GITHUB_OUTPUT"
-            echo "has_changes=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "has_changes=false" >> "$GITHUB_OUTPUT"
-          fi
+          matrix=$(echo "$changed" | jq -c '{include: .}')
+          echo "matrix=${matrix}" >> "$GITHUB_OUTPUT"
 
   mirror:
     name: Copy ${{ matrix.name }}:${{ matrix.tag }}
     needs: check
-    if: needs.check.outputs.has_changes == 'true'
     runs-on:
       group: dobbolab
     strategy:
