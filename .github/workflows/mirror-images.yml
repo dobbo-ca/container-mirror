@@ -102,7 +102,11 @@ jobs:
           count=$(echo "$changed" | jq 'length')
           echo "Summary: ${count} to copy, ${skipped} up to date, ${total} total"
 
-          matrix=$(echo "$changed" | jq -c '{include: .}')
+          if [ "$count" -gt 0 ]; then
+            matrix=$(echo "$changed" | jq -c '{include: .}')
+          else
+            matrix='{"include":[{"name":"all images","tag":"up to date","source":"","skip":"true"}]}'
+          fi
           echo "matrix=${matrix}" >> "$GITHUB_OUTPUT"
 
   mirror:
@@ -117,10 +121,13 @@ jobs:
 
     steps:
       - name: Install crane
+        if: matrix.skip != 'true'
         uses: imjasonh/setup-crane@v0.4
 
       - name: Log in to GHCR
+        if: matrix.skip != 'true'
         run: echo "${{ secrets.GITHUB_TOKEN }}" | crane auth login ghcr.io -u ${{ github.actor }} --password-stdin
 
       - name: Copy image
+        if: matrix.skip != 'true'
         run: crane copy "${{ matrix.source }}" "${{ env.REGISTRY }}/${{ matrix.name }}:${{ matrix.tag }}"
