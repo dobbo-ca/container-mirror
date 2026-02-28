@@ -1,0 +1,55 @@
+name: Mirror Container Images
+
+on:
+  schedule:
+    - cron: '0 4 * * 0'  # Weekly on Sunday at 04:00 UTC
+  workflow_dispatch: {}
+
+permissions:
+  packages: write
+
+env:
+  REGISTRY: ghcr.io/dobbo-ca/mirror
+
+jobs:
+  mirror:
+    name: Mirror ${{ matrix.image }}:${{ matrix.tag }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - source: docker.io/semgrep/semgrep:latest
+            image: semgrep
+            tag: latest
+          - source: docker.io/library/rust:1.91-slim
+            image: rust
+            tag: 1.91-slim
+          - source: docker.io/tonistiigi/xx:latest
+            image: xx
+            tag: latest
+          - source: docker.io/library/node:20-alpine
+            image: node
+            tag: 20-alpine
+          - source: docker.io/library/nginx:1.27-alpine
+            image: nginx
+            tag: 1.27-alpine
+          - source: docker.io/library/postgres:16
+            image: postgres
+            tag: "16"
+          - source: docker.io/library/redis:7
+            image: redis
+            tag: "7"
+          - source: docker.io/valkey/valkey:7
+            image: valkey
+            tag: "7"
+
+    steps:
+      - name: Install crane
+        uses: imjasonh/setup-crane@v0.4
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | crane auth login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Copy image
+        run: crane copy "${{ matrix.source }}" "${{ env.REGISTRY }}/${{ matrix.image }}:${{ matrix.tag }}"
