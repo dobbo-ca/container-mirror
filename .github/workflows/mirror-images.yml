@@ -47,5 +47,17 @@ jobs:
       - name: Log in to GHCR
         run: echo "${{ secrets.GITHUB_TOKEN }}" | crane auth login ghcr.io -u ${{ github.actor }} --password-stdin
 
-      - name: Copy image
-        run: crane copy "${{ matrix.source }}" "${{ env.REGISTRY }}/${{ matrix.name }}:${{ matrix.tag }}"
+      - name: Copy image (skip if digest matches)
+        run: |
+          SOURCE="${{ matrix.source }}"
+          TARGET="${{ env.REGISTRY }}/${{ matrix.name }}:${{ matrix.tag }}"
+
+          SOURCE_DIGEST=$(crane digest "$SOURCE" 2>/dev/null || echo "")
+          TARGET_DIGEST=$(crane digest "$TARGET" 2>/dev/null || echo "")
+
+          if [ -n "$SOURCE_DIGEST" ] && [ "$SOURCE_DIGEST" = "$TARGET_DIGEST" ]; then
+            echo "Skipping $SOURCE — digest $SOURCE_DIGEST already matches"
+          else
+            echo "Copying $SOURCE → $TARGET"
+            crane copy "$SOURCE" "$TARGET"
+          fi
