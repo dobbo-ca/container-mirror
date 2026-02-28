@@ -27,7 +27,45 @@ jobs:
       - name: Generate matrix from images.yml
         id: matrix
         run: |
-          matrix=$(yq -o=json '[.images[] | .tags[] as $tag | {"source": (.source + ":" + $tag), "name": .name, "tag": $tag}]' images.yml | jq -c '{include: .}')
+          matrix=$(python3 -c "
+          import json, re
+
+          with open('images.yml') as f:
+              # Minimal YAML parser for our simple format
+              content = f.read()
+
+          images = []
+          current = {}
+          in_tags = False
+          for line in content.split('\n'):
+              stripped = line.strip()
+              if stripped.startswith('- source:'):
+                  if current:
+                      images.append(current)
+                  current = {'source': stripped.split(':', 1)[1].strip()}
+                  in_tags = False
+              elif stripped.startswith('name:'):
+                  current['name'] = stripped.split(':', 1)[1].strip()
+                  in_tags = False
+              elif stripped == 'tags:':
+                  current['tags'] = []
+                  in_tags = True
+              elif in_tags and stripped.startswith('- '):
+                  current['tags'].append(stripped[2:].strip().strip('\"'))
+          if current:
+              images.append(current)
+
+          matrix = []
+          for img in images:
+              for tag in img.get('tags', []):
+                  matrix.append({
+                      'source': img['source'] + ':' + tag,
+                      'name': img['name'],
+                      'tag': tag,
+                  })
+
+          print(json.dumps({'include': matrix}))
+          ")
           echo "matrix=${matrix}" >> "$GITHUB_OUTPUT"
 
   mirror:
