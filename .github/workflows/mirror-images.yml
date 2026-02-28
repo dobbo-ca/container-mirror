@@ -17,23 +17,32 @@ env:
   REGISTRY: ghcr.io/dobbo-ca/mirror
 
 jobs:
-  generate-matrix:
-    name: Generate matrix
+  check:
+    name: Check digests
     runs-on:
       group: dobbolab
     outputs:
-      matrix: ${{ steps.matrix.outputs.matrix }}
+      matrix: ${{ steps.diff.outputs.matrix }}
+      has_changes: ${{ steps.diff.outputs.has_changes }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Generate matrix from images.yml
-        id: matrix
+      - name: Install crane
+        uses: imjasonh/setup-crane@v0.4
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | crane auth login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Compare source and target digests
+        id: diff
         run: |
-          matrix=$(python3 -c "
-          import json, re
+          REGISTRY="${{ env.REGISTRY }}"
+
+          # Parse images.yml into source:tag pairs
+          entries=$(python3 -c "
+          import json
 
           with open('images.yml') as f:
-              # Minimal YAML parser for our simple format
               content = f.read()
 
           images = []
@@ -57,28 +66,61 @@ jobs:
           if current:
               images.append(current)
 
-          matrix = []
+          result = []
           for img in images:
               for tag in img.get('tags', []):
-                  matrix.append({
+                  result.append({
                       'source': img['source'] + ':' + tag,
                       'name': img['name'],
                       'tag': tag,
                   })
-
-          print(json.dumps({'include': matrix}))
+          print(json.dumps(result))
           ")
-          echo "matrix=${matrix}" >> "$GITHUB_OUTPUT"
+
+          changed='[]'
+          skipped=0
+          total=0
+
+          for row in $(echo "$entries" | jq -c '.[]'); do
+            source=$(echo "$row" | jq -r '.source')
+            name=$(echo "$row" | jq -r '.name')
+            tag=$(echo "$row" | jq -r '.tag')
+            target="${REGISTRY}/${name}:${tag}"
+            total=$((total + 1))
+
+            source_digest=$(crane digest "$source" 2>/dev/null || echo "MISSING")
+            target_digest=$(crane digest "$target" 2>/dev/null || echo "MISSING")
+
+            if [ "$source_digest" != "MISSING" ] && [ "$source_digest" = "$target_digest" ]; then
+              echo "✓ ${name}:${tag} — up to date (${source_digest})"
+              skipped=$((skipped + 1))
+            else
+              echo "⬆ ${name}:${tag} — needs copy (source=${source_digest} target=${target_digest})"
+              changed=$(echo "$changed" | jq -c --argjson entry "$row" '. + [$entry]')
+            fi
+          done
+
+          count=$(echo "$changed" | jq 'length')
+          echo "Summary: ${count} to copy, ${skipped} up to date, ${total} total"
+
+          if [ "$count" -gt 0 ]; then
+            matrix=$(echo "$changed" | jq -c '{include: .}')
+            echo "matrix=${matrix}" >> "$GITHUB_OUTPUT"
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+          fi
 
   mirror:
-    name: Mirror ${{ matrix.name }}:${{ matrix.tag }}
-    needs: generate-matrix
+    name: Copy ${{ matrix.name }}:${{ matrix.tag }}
+    needs: check
+    if: needs.check.outputs.has_changes == 'true'
     runs-on:
       group: dobbolab
     strategy:
       fail-fast: false
       max-parallel: 4
-      matrix: ${{ fromJson(needs.generate-matrix.outputs.matrix) }}
+      matrix: ${{ fromJson(needs.check.outputs.matrix) }}
 
     steps:
       - name: Install crane
@@ -87,29 +129,5 @@ jobs:
       - name: Log in to GHCR
         run: echo "${{ secrets.GITHUB_TOKEN }}" | crane auth login ghcr.io -u ${{ github.actor }} --password-stdin
 
-      - name: Check digests
-        id: check
-        run: |
-          SOURCE="${{ matrix.source }}"
-          TARGET="${{ env.REGISTRY }}/${{ matrix.name }}:${{ matrix.tag }}"
-
-          SOURCE_DIGEST=$(crane digest "$SOURCE" 2>&1) && true
-          SOURCE_EXIT=$?
-          TARGET_DIGEST=$(crane digest "$TARGET" 2>&1) && true
-          TARGET_EXIT=$?
-
-          echo "source=$SOURCE_DIGEST" >> "$GITHUB_OUTPUT"
-          echo "target=$TARGET_DIGEST" >> "$GITHUB_OUTPUT"
-
-          if [ "$SOURCE_EXIT" -eq 0 ] && [ "$TARGET_EXIT" -eq 0 ] && [ "$SOURCE_DIGEST" = "$TARGET_DIGEST" ]; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::Up to date ($SOURCE_DIGEST)"
-          else
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-            echo "::warning::Needs copy — source=$SOURCE_DIGEST target=$TARGET_DIGEST"
-          fi
-
-      - name: Copy ${{ matrix.source }}
-        if: steps.check.outputs.changed == 'true'
-        run: |
-          crane copy "${{ matrix.source }}" "${{ env.REGISTRY }}/${{ matrix.name }}:${{ matrix.tag }}"
+      - name: Copy image
+        run: crane copy "${{ matrix.source }}" "${{ env.REGISTRY }}/${{ matrix.name }}:${{ matrix.tag }}"
