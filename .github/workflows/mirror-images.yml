@@ -4,6 +4,9 @@ on:
   schedule:
     - cron: '0 4 * * 0'  # Weekly on Sunday at 04:00 UTC
   workflow_dispatch: {}
+  push:
+    branches: [main]
+    paths: [images.yml]
 
 permissions:
   packages: write
@@ -12,37 +15,30 @@ env:
   REGISTRY: ghcr.io/dobbo-ca/mirror
 
 jobs:
+  generate-matrix:
+    name: Generate matrix
+    runs-on:
+      group: dobbolab
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate matrix from images.yml
+        id: matrix
+        run: |
+          matrix=$(yq -o=json '[.images[] | .tags[] as $tag | {"source": (.source + ":" + $tag), "name": .name, "tag": $tag}]' images.yml | jq -c '{include: .}')
+          echo "matrix=${matrix}" >> "$GITHUB_OUTPUT"
+
   mirror:
-    name: Mirror ${{ matrix.image }}:${{ matrix.tag }}
-    runs-on: ubuntu-latest
+    name: Mirror ${{ matrix.name }}:${{ matrix.tag }}
+    needs: generate-matrix
+    runs-on:
+      group: dobbolab
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - source: docker.io/semgrep/semgrep:latest
-            image: semgrep
-            tag: latest
-          - source: docker.io/library/rust:1.91-slim
-            image: rust
-            tag: 1.91-slim
-          - source: docker.io/tonistiigi/xx:latest
-            image: xx
-            tag: latest
-          - source: docker.io/library/node:20-alpine
-            image: node
-            tag: 20-alpine
-          - source: docker.io/library/nginx:1.27-alpine
-            image: nginx
-            tag: 1.27-alpine
-          - source: docker.io/library/postgres:16
-            image: postgres
-            tag: "16"
-          - source: docker.io/library/redis:7
-            image: redis
-            tag: "7"
-          - source: docker.io/valkey/valkey:7
-            image: valkey
-            tag: "7"
+      max-parallel: 4
+      matrix: ${{ fromJson(needs.generate-matrix.outputs.matrix) }}
 
     steps:
       - name: Install crane
@@ -52,4 +48,4 @@ jobs:
         run: echo "${{ secrets.GITHUB_TOKEN }}" | crane auth login ghcr.io -u ${{ github.actor }} --password-stdin
 
       - name: Copy image
-        run: crane copy "${{ matrix.source }}" "${{ env.REGISTRY }}/${{ matrix.image }}:${{ matrix.tag }}"
+        run: crane copy "${{ matrix.source }}" "${{ env.REGISTRY }}/${{ matrix.name }}:${{ matrix.tag }}"

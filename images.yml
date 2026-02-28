@@ -1,0 +1,40 @@
+images:
+  - source: docker.io/semgrep/semgrep
+    name: semgrep
+    tags:
+      - latest
+
+  - source: docker.io/library/rust
+    name: rust
+    tags:
+      - 1.91-slim
+
+  - source: docker.io/tonistiigi/xx
+    name: xx
+    tags:
+      - latest
+
+  - source: docker.io/library/node
+    name: node
+    tags:
+      - 20-alpine
+
+  - source: docker.io/library/nginx
+    name: nginx
+    tags:
+      - 1.27-alpine
+
+  - source: docker.io/library/postgres
+    name: postgres
+    tags:
+      - "16"
+
+  - source: docker.io/library/redis
+    name: redis
+    tags:
+      - "7"
+
+  - source: docker.io/valkey/valkey
+    name: valkey
+    tags:
+      - "7"
