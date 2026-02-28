@@ -90,11 +90,19 @@ jobs:
           SOURCE="${{ matrix.source }}"
           TARGET="${{ env.REGISTRY }}/${{ matrix.name }}:${{ matrix.tag }}"
 
-          SOURCE_DIGEST=$(crane digest "$SOURCE" 2>/dev/null || echo "")
-          TARGET_DIGEST=$(crane digest "$TARGET" 2>/dev/null || echo "")
+          echo "Source: $SOURCE"
+          echo "Target: $TARGET"
 
-          if [ -n "$SOURCE_DIGEST" ] && [ "$SOURCE_DIGEST" = "$TARGET_DIGEST" ]; then
-            echo "Skipping $SOURCE — digest $SOURCE_DIGEST already matches"
+          SOURCE_DIGEST=$(crane digest "$SOURCE" 2>&1) && true
+          SOURCE_EXIT=$?
+          echo "Source digest (exit $SOURCE_EXIT): $SOURCE_DIGEST"
+
+          TARGET_DIGEST=$(crane digest "$TARGET" 2>&1) && true
+          TARGET_EXIT=$?
+          echo "Target digest (exit $TARGET_EXIT): $TARGET_DIGEST"
+
+          if [ "$SOURCE_EXIT" -eq 0 ] && [ "$TARGET_EXIT" -eq 0 ] && [ "$SOURCE_DIGEST" = "$TARGET_DIGEST" ]; then
+            echo "::notice::Skipping — digests match ($SOURCE_DIGEST)"
           else
             echo "Copying $SOURCE → $TARGET"
             crane copy "$SOURCE" "$TARGET"
