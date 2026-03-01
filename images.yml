@@ -45,6 +45,11 @@ images:
       - "7"
       - latest
 
+  - source: gcr.io/distroless/cc-debian12
+    name: cc-debian12
+    tags:
+      - latest
+
   - source: docker.io/aquasec/trivy
     name: trivy
     tags:
