@@ -8,6 +8,7 @@ images:
     name: rust
     tags:
       - 1.91-slim
+      - latest
 
   - source: docker.io/tonistiigi/xx
     name: xx
@@ -18,23 +19,33 @@ images:
     name: node
     tags:
       - 20-alpine
+      - latest
 
   - source: docker.io/library/nginx
     name: nginx
     tags:
       - 1.27-alpine
+      - latest
 
   - source: docker.io/library/postgres
     name: postgres
     tags:
       - "16"
+      - latest
 
   - source: docker.io/library/redis
     name: redis
     tags:
       - "7"
+      - latest
 
   - source: docker.io/valkey/valkey
     name: valkey
     tags:
       - "7"
+      - latest
+
+  - source: docker.io/aquasec/trivy
+    name: trivy
+    tags:
+      - latest
